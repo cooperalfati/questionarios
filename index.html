@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Perguntas e Respostas · Cooperativa Alfa</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="top-row">
+      <div>
+        <p class="eyebrow">Cooperativa Alfa</p>
+        <h1>Perguntas e Respostas</h1>
+      </div>
+      <div class="quem" id="quem" hidden>
+        <div><strong id="quem-nome"></strong><small id="quem-email"></small></div>
+        <button class="btn sm" type="button" id="btn-sair">Sair</button>
+      </div>
+    </div>
+    <nav class="tabs" aria-label="Seções" id="nav" hidden>
+      <a href="#questionarios" id="tab-questionarios" hidden>Questionários</a>
+      <a href="#responder" id="tab-responder">Responder</a>
+      <a href="#respostas" id="tab-respostas" hidden>Respostas</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="notice" id="aviso" hidden></p>
+  <section id="v-login" hidden>
+    <div class="panel login">
+      <h2>Entre para continuar</h2>
+      <p>Use a sua conta Google para responder os questionários da cooperativa.</p>
+      <button class="g-btn" type="button" id="btn-entrar"><span class="g-mark" aria-hidden="true">G</span>Entrar com Google</button>
+      <p class="msg err" id="login-msg" role="status" aria-live="polite" style="margin:16px 0 0"></p>
+    </div>
+  </section>
+  <section id="v-questionarios" hidden></section>
+  <section id="v-editor" hidden></section>
+  <section id="v-responder"><p class="muted" id="carregando">Carregando…</p></section>
+  <section id="v-respostas" hidden></section>
+  <section id="v-convidados" hidden></section>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, reauthenticateWithPopup } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, query, where } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
 const fbApp = initializeApp(firebaseConfig);
@@ -9,9 +9,12 @@ const fdb = getFirestore(fbApp);
 const snapDocs = s => ({docs:s.docs.map(d => ({id:d.id, data:() => d.data()}))});
 // adaptador com a mesma forma usada no restante do código
 const fire = {
+  // várias gravações de uma vez: ops = [{set:path, data} | {del:path}]
+  lote: async ops => { const b = writeBatch(fdb); for (const o of ops){ if (o.del) b.delete(doc(fdb, o.del)); else b.set(doc(fdb, o.set), o.data); } await b.commit(); },
   doc: p => ({
     set: d => setDoc(doc(fdb, p), d),
     delete: () => deleteDoc(doc(fdb, p)),
+    get: () => getDoc(doc(fdb, p)).then(x => ({exists:x.exists(), data:() => x.data()})),
     onSnapshot: (cb, err) => onSnapshot(doc(fdb, p), x => cb({exists:x.exists(), data:() => x.data()}), err)
   }),
   collection: p => ({
@@ -158,7 +161,9 @@ const nomes = {}, emailsDe = {};
 let convites = {};               // qid -> {emails:[{email, enviadoEm}], assunto, mensagem}
 let convSel = null;              // questionário em "Convidados"
 const APP_URL = location.origin + location.pathname;
-const linkDe = qid => APP_URL + '#q-' + qid;
+const linkDe = token => APP_URL + '#r-' + token;
+// token secreto do convite: 32 caracteres hexadecimais (128 bits)
+const novoToken = () => [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
 
 // nome e e-mail vêm gravados em cada resposta (login Google)
 async function carregarNomes(){}
@@ -174,16 +179,8 @@ const VIEWS = ['questionarios', 'editor', 'responder', 'respostas', 'convidados'
 let viewAtual = null;
 function route(){
   let h = location.hash.slice(1);
-  if (/^q-[A-Za-z0-9]+$/.test(h)){
-    // link do e-mail: abre direto o questionário
-    respSel = h.slice(2);
-    try { sessionStorage.setItem('abrirQ', respSel); } catch {}
-    location.replace('#responder');
-    return;
-  }
-  if (!eu) return;   // antes do login só guarda o questionário pedido
-  if (!VIEWS.includes(h)) h = isAdmin ? 'questionarios' : 'responder';
-  if (!isAdmin && h !== 'responder') h = 'responder';
+  if (modoConvidado || !eu || !isAdmin) return;
+  if (!VIEWS.includes(h) || h === 'responder') h = 'questionarios';
   if (h === 'editor' && !edit) h = 'questionarios';
   viewAtual = h;
   for (const v of VIEWS) $('#v-' + v).hidden = v !== h;
@@ -332,9 +329,7 @@ function renderEditor(){
     el('div', {class:'panel ed-head'},
       el('label', {class:'f'}, 'Título do questionário', titulo),
       el('label', {class:'f'}, 'Descrição', desc),
-      el('div', {style:'display:flex;flex-wrap:wrap;gap:10px 24px'},
-        el('label', {class:'chk'}, ativo, 'Aberto para respostas'),
-        el('label', {class:'chk'}, soConv, 'Somente convidados podem responder'))),
+      el('label', {class:'chk'}, ativo, 'Aberto para respostas')),
     tree,
     el('div', {style:'margin-top:12px'},
       el('button', {class:'btn', type:'button', onclick:() => { edit.blocos.push(novoBloco()); sujo(); renderArvore(); }}, '+ Novo bloco'),
@@ -738,19 +733,30 @@ function renderFormResposta(v, qid){
 /* ================= convidados ================= */
 const MSG_PADRAO = {
   assunto:'Questionário: {titulo}',
-  mensagem:'Olá,\n\nVocê foi convidado(a) a responder o questionário “{titulo}”.\n\nPara responder, abra o link abaixo e entre com a sua conta da cooperativa:\n{link}\n\nObrigado!'
+  mensagem:'Olá,\n\nVocê foi convidado(a) a responder o questionário “{titulo}”.\n\nPara responder, abra o seu link pessoal abaixo. Não precisa de login nem senha:\n{link}\n\nEste link é só seu, não o encaminhe.\n\nObrigado!'
 };
 let enviando = false, msgEnvio = null;   // {qid, texto, tipo}
 const RE_EMAIL = /[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
-function preencher(txt, q){ return String(txt || '').split('{titulo}').join(q.titulo || '').split('{link}').join(linkDe(q.id)); }
+function preencher(txt, q, token){ return String(txt || '').split('{titulo}').join(q.titulo || '').split('{link}').join(token ? linkDe(token) : '{link}'); }
 function convDe(qid){
   const c = convites[qid] || {};
   return {emails:Array.isArray(c.emails) ? c.emails : [], assunto:c.assunto ?? MSG_PADRAO.assunto, mensagem:c.mensagem ?? MSG_PADRAO.mensagem};
 }
-async function salvarConv(qid, c){
-  // "lista" (só os endereços) é o que as regras do Firestore consultam
-  await db.doc('convites/' + qid).set({qid, emails:c.emails, lista:c.emails.map(x => x.email), assunto:c.assunto, mensagem:c.mensagem, atualizadoEm:new Date().toISOString()});
-  convites[qid] = clone(c);
+async function salvarConv(qid, c, extra = []){
+  // "lista" (só os endereços) facilita consultas; cada convidado tem um token em tokens/{token}
+  const dados = {qid, emails:c.emails, lista:c.emails.map(x => x.email), assunto:c.assunto, mensagem:c.mensagem, atualizadoEm:new Date().toISOString()};
+  await db.lote([{set:'convites/' + qid, data:dados}, ...extra]);
+  convites[qid] = clone(dados);
+}
+// convidados antigos, cadastrados antes dos links pessoais, ganham token aqui
+async function garantirTokens(qid){
+  const c = clone(convDe(qid));
+  const faltam = c.emails.filter(x => !x.token);
+  if (!faltam.length) return c;
+  const agora = new Date().toISOString();
+  const ops = faltam.map(x => { x.token = novoToken(); return {set:'tokens/' + x.token, data:{qid, email:x.email, criadoEm:agora}}; });
+  await salvarConv(qid, c, ops);
+  return c;
 }
 async function copiar(btn, texto, rotulo){
   try { await navigator.clipboard.writeText(texto); btn.textContent = 'Copiado'; }
@@ -849,11 +855,6 @@ async function renderConvidados(){
       el('h2', {text:'Convidados de'}), sel)));
   if (!q.ativo) v.append(el('p', {class:'notice', text:'Este questionário está fechado. Abra-o no editor (“Aberto para respostas”) antes de enviar os convites.'}));
 
-  // link
-  const linkInp = el('input', {type:'text', readonly:true, 'aria-label':'Link do questionário'});
-  linkInp.value = linkDe(q.id);
-  const bLink = el('button', {class:'btn sm', type:'button'}, 'Copiar link');
-  bLink.addEventListener('click', () => copiar(bLink, linkInp.value, 'Copiar link'));
   // adicionar e-mails
   const ta = el('textarea', {rows:'4', placeholder:'Cole os e-mails aqui, separados por vírgula, ponto e vírgula ou um por linha', 'aria-label':'E-mails para adicionar'});
   const stAdd = el('p', {class:'msg', role:'status', 'aria-live':'polite'});
@@ -866,7 +867,9 @@ async function renderConvidados(){
     if (!novos.length){ stAdd.textContent = 'Todos esses e-mails já estão na lista.'; stAdd.className = 'msg'; return; }
     bAdd.disabled = true;
     try {
-      await salvarConv(q.id, {...c, emails:[...emails, ...novos.map(e => ({email:e, enviadoEm:null}))]});
+      const agora = new Date().toISOString();
+      const itens = novos.map(e => ({email:e, token:novoToken(), enviadoEm:null}));
+      await salvarConv(q.id, {...c, emails:[...emails, ...itens]}, itens.map(x => ({set:'tokens/' + x.token, data:{qid:q.id, email:x.email, criadoEm:agora}})));
       ta.value = '';
       renderConvidados();
     } catch { stAdd.textContent = 'Não foi possível salvar a lista. Tente novamente.'; stAdd.className = 'msg err'; bAdd.disabled = false; }
@@ -875,12 +878,9 @@ async function renderConvidados(){
     el('div', {class:'panel'}, el('h3', {text:'Adicionar e-mails'}),
       el('p', {class:'muted small', style:'margin:0 0 8px', text:'Pode colar uma lista do Excel ou do Outlook: o app separa os endereços e ignora repetidos.'}),
       ta, el('div', {class:'row-acts'}, bAdd), stAdd),
-    el('div', {class:'panel'}, el('h3', {text:'Link do questionário'}),
-      el('p', {class:'muted small', style:'margin:0', text:'Este link abre direto este questionário. Ele vai no e-mail no lugar de {link}.'}),
-      el('div', {class:'linkbox'}, linkInp, bLink),
-      el('p', {class:'hint small muted', style:'margin:10px 0 0', text:q.somenteConvidados
-        ? 'Quem abrir o link entra com a conta Google. Só os e-mails desta lista conseguem enviar resposta.'
-        : 'Quem abrir o link entra com a conta Google. Este questionário aceita resposta de qualquer conta (dá para restringir no editor).'}))));
+    el('div', {class:'panel'}, el('h3', {text:'Links pessoais'}),
+      el('p', {class:'muted small', style:'margin:0 0 8px', text:'Cada convidado recebe um link só dele, que abre o questionário sem login. O link entra no e-mail no lugar de {link}.'}),
+      el('p', {class:'muted small', style:'margin:0', text:'A resposta fica ligada ao e-mail do convite. Quem abrir o mesmo link de novo vê e pode alterar a resposta enquanto o questionário estiver aberto. Se um link vazar, remova o convidado e adicione de novo: o link antigo deixa de funcionar.'}))));
 
   // números
   v.append(el('div', {class:'tiles', style:'margin-top:16px'},
@@ -916,14 +916,17 @@ async function renderConvidados(){
       stEnv.textContent = erroGmail(e); stEnv.className = 'msg err st-env';
       return;
     }
-    const atual = clone(convDe(q.id));
+    let atual;
+    try { atual = await garantirTokens(q.id); }
+    catch { enviando = false; for (const b of v.querySelectorAll('button')) b.disabled = false; stEnv.textContent = 'Não foi possível gerar os links pessoais. Tente novamente.'; stEnv.className = 'msg err st-env'; return; }
     atual.assunto = assunto.value; atual.mensagem = msg.value;
-    const sub = preencher(assunto.value, q), corpo = preencher(msg.value, q);
+    const sub = preencher(assunto.value, q);
     let ok = 0, erro = null;
     for (const item of lista){
       stEnv.textContent = `Enviando ${ok + 1} de ${lista.length}: ${item.email}…`; stEnv.className = 'msg';
       try {
-        await enviarGmail(item.email, sub, corpo);
+        const tk = (atual.emails.find(x => x.email === item.email) || {}).token;
+        await enviarGmail(item.email, sub, preencher(msg.value, q, tk));
         ok++;
         const alvo = atual.emails.find(x => x.email === item.email);
         if (alvo) alvo.enviadoEm = new Date().toISOString();
@@ -943,10 +946,13 @@ async function renderConvidados(){
   const reenviar = pendentes.filter(x => x.enviadoEm);
   const bLembrar = el('button', {class:'btn', type:'button', disabled:!reenviar.length}, `Reenviar aos pendentes (${reenviar.length})`);
   bLembrar.addEventListener('click', () => enviarPara(reenviar, bLembrar));
-  const bCopEm = el('button', {class:'btn sm', type:'button', disabled:!pendentes.length}, 'Copiar e-mails dos pendentes');
-  bCopEm.addEventListener('click', () => copiar(bCopEm, pendentes.map(x => x.email).join('; '), 'Copiar e-mails dos pendentes'));
-  const bCopMsg = el('button', {class:'btn sm', type:'button'}, 'Copiar mensagem pronta');
-  bCopMsg.addEventListener('click', () => copiar(bCopMsg, preencher(assunto.value, q) + '\n\n' + preencher(msg.value, q), 'Copiar mensagem pronta'));
+  const bCopEm = el('button', {class:'btn sm', type:'button', disabled:!pendentes.length}, 'Copiar e-mails e links dos pendentes');
+  bCopEm.addEventListener('click', async () => {
+    const c2 = await garantirTokens(q.id).catch(() => convDe(q.id));
+    const pend = c2.emails.filter(x => !respondeu[x.email] && x.token);
+    copiar(bCopEm, 'E-mail;Link\n' + pend.map(x => x.email + ';' + linkDe(x.token)).join('\n'), 'Copiar e-mails e links dos pendentes');
+  });
+  const bCopMsg = null;
 
   v.append(el('div', {class:'panel'},
     el('h3', {text:'E-mail do convite'}),
@@ -956,7 +962,7 @@ async function renderConvidados(){
     el('div', {class:'row-acts'}, bSalvarMsg, bPadrao, stMsg),
     el('div', {class:'row-acts', style:'padding-top:12px;border-top:1px solid var(--line);margin-top:14px'}, bNovos, bLembrar),
     stEnv,
-    el('div', {class:'row-acts'}, el('span', {class:'muted small', text:'Sem Gmail?'}), bCopEm, bCopMsg)));
+    el('div', {class:'row-acts'}, el('span', {class:'muted small', text:'Sem Gmail?'}), bCopEm)));
 
   // tabela
   if (!emails.length){
@@ -969,19 +975,20 @@ async function renderConvidados(){
     const r = respondeu[x.email];
     const del = el('button', {class:'btn sm danger', type:'button', 'aria-label':'Remover ' + x.email}, 'Remover');
     armar(del, 'Confirmar', async () => {
-      try { await salvarConv(q.id, {...convDe(q.id), emails:convDe(q.id).emails.filter(y => y.email !== x.email)}); renderConvidados(); } catch {}
+      try { await salvarConv(q.id, {...convDe(q.id), emails:convDe(q.id).emails.filter(y => y.email !== x.email)}, x.token ? [{del:'tokens/' + x.token}] : []); renderConvidados(); } catch {}
     });
     tb.append(el('tr', null,
       el('td', {class:'mail', text:x.email}),
       el('td', null, el('span', {class:'pill ' + (r ? 'ok' : 'warn'), text:r ? 'Respondeu' : 'Pendente'}),
         r ? el('span', {class:'muted small', text:' ' + fmtDH(r)}) : null),
       el('td', {text:x.enviadoEm ? fmtDH(x.enviadoEm) : 'Não enviado'}),
+      el('td', null, x.token ? (() => { const b = el('button', {class:'btn sm', type:'button'}, 'Copiar link'); b.addEventListener('click', () => copiar(b, linkDe(x.token), 'Copiar link')); return b; })() : el('span', {class:'muted small', text:'gerado no envio'})),
       el('td', null, del)));
   }
   v.append(el('div', {class:'sec'}, el('h2', {text:'Lista de convidados'}),
     el('div', {class:'scroll'}, el('table', null,
-      el('thead', null, el('tr', null, ['E-mail', 'Situação', 'Convite enviado', ''].map(t => el('th', {text:t})))), tb)),
-    el('p', {class:'hint muted small', text:'“Respondeu” compara o e-mail da conta de quem respondeu com o e-mail convidado.'})));
+      el('thead', null, el('tr', null, ['E-mail', 'Situação', 'Convite enviado', 'Link pessoal', ''].map(t => el('th', {text:t})))), tb)),
+    el('p', {class:'hint muted small', text:'A situação vem do link pessoal: a resposta enviada por um link conta para o e-mail desse convite.'})));
 }
 
 /* ================= relatório ================= */
@@ -1141,8 +1148,65 @@ $('#btn-sair').addEventListener('click', async () => {
 });
 getRedirectResult(auth).catch(() => {});
 
+/* ---------- convidado: responde pelo link pessoal, sem login ---------- */
+const MATCH_TOKEN = /^#r-([0-9a-f]{32})$/.exec(location.hash);
+const modoConvidado = !!MATCH_TOKEN;
+async function abrirConvite(token){
+  db = fire;
+  for (const v of VIEWS) $('#v-' + v).hidden = true;
+  $('#nav').hidden = true; $('#quem').hidden = true; $('#v-login').hidden = true;
+  const v = $('#v-responder');
+  v.hidden = false;
+  v.replaceChildren(el('p', {class:'muted', text:'Carregando o questionário…'}));
+  const falha = (titulo, texto) => v.replaceChildren(el('div', {class:'empty'}, el('h2', {text:titulo}), el('p', {text:texto})));
+  let tk, q, anterior = null;
+  try {
+    const t = await db.doc('tokens/' + token).get();
+    if (!t.exists) return falha('Link inválido', 'Este link não é mais válido. Peça um novo convite a quem enviou o questionário.');
+    tk = t.data();
+    const qd = await db.doc('questionarios/' + tk.qid).get();
+    if (!qd.exists) return falha('Questionário não encontrado', 'Este questionário foi removido.');
+    q = {id:tk.qid, ...qd.data()};
+    const rd = await db.doc('respostas/' + tk.qid + '_' + token).get();
+    if (rd.exists) anterior = rd.data();
+  } catch {
+    return falha('Não foi possível abrir', 'Verifique a sua conexão com a internet e recarregue a página.');
+  }
+  const vals = clone((anterior && anterior.respostas) || {});
+  const form = renderForm(blocosDe(q), vals, 'r');
+  const st = el('p', {class:'msg', role:'status', 'aria-live':'polite'});
+  const btn = el('button', {class:'btn primary', type:'submit', disabled:!q.ativo}, anterior ? 'Atualizar resposta' : 'Enviar resposta');
+  const f = el('form', {novalidate:true, class:'panel'}, form.el,
+    el('div', {style:'display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)'}, btn, st));
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    const n = form.validar();
+    if (n){ st.textContent = n === 1 ? 'Falta responder 1 pergunta obrigatória.' : `Faltam ${n} perguntas obrigatórias.`; st.className = 'msg err'; return; }
+    btn.disabled = true; st.textContent = 'Enviando…'; st.className = 'msg';
+    try {
+      await db.doc('respostas/' + q.id + '_' + token).set({qid:q.id, token, email:tk.email, respostas:form.podadas(), enviadoEm:new Date().toISOString()});
+      st.textContent = 'Resposta enviada. Obrigado! Você pode voltar a este link para alterar enquanto o questionário estiver aberto.'; st.className = 'msg ok';
+      btn.textContent = 'Atualizar resposta';
+    } catch (err) {
+      st.textContent = err && err.code === 'permission-denied'
+        ? 'Este questionário não aceita mais respostas ou o link deixou de valer.'
+        : 'Não foi possível enviar agora. Verifique a conexão e tente novamente.';
+      st.className = 'msg err';
+    } finally { btn.disabled = !q.ativo; }
+  });
+  v.replaceChildren(
+    el('div', {style:'margin-bottom:14px'}, el('h2', {text:q.titulo || 'Questionário'}),
+      q.descricao ? el('p', {class:'muted', style:'margin:4px 0 0;max-width:70ch', text:q.descricao}) : null,
+      el('p', {class:'small muted', style:'margin:6px 0 0', text:'Convite para ' + tk.email + (anterior && anterior.enviadoEm ? ' · última resposta enviada em ' + fmtDH(anterior.enviadoEm) : '')}),
+      !q.ativo ? el('p', {class:'notice', style:'margin-top:10px', text:'Este questionário está fechado para respostas.'}) : null,
+      el('p', {class:'small muted', style:'margin:6px 0 0'}, el('span', {class:'req', text:'*'}), ' obrigatória')),
+    f);
+}
+
+/* ---------- administrador: login Google ---------- */
 let iniciado = false;
-onAuthStateChanged(auth, async u => {
+if (modoConvidado) abrirConvite(MATCH_TOKEN[1]);
+else onAuthStateChanged(auth, async u => {
   if (!u){ mostrarLogin(); return; }
   if (iniciado) return;
   iniciado = true;
@@ -1150,27 +1214,32 @@ onAuthStateChanged(auth, async u => {
   uid = u.uid;
   eu = {uid:u.uid, nome:u.displayName || '', email:String(u.email || '').toLowerCase()};
   $('#v-login').hidden = true;
-  $('#nav').hidden = false;
   $('#quem').hidden = false;
   $('#quem-nome').textContent = eu.nome || eu.email;
   $('#quem-email').textContent = eu.nome ? eu.email : '';
-  try { const q = sessionStorage.getItem('abrirQ'); if (q){ respSel = q; sessionStorage.removeItem('abrirQ'); } } catch {}
 
   // administradores: config/admins.emails
-  isAdmin = await new Promise(res => {
-    const off = db.doc('config/admins').onSnapshot(s => { off(); res(!!(s.exists && Array.isArray(s.data().emails) && s.data().emails.map(x => String(x).toLowerCase()).includes(eu.email))); }, () => res(false));
-  });
-  $('#tab-questionarios').hidden = !isAdmin;
-  $('#tab-respostas').hidden = !isAdmin;
+  isAdmin = await db.doc('config/admins').get()
+    .then(s => !!(s.exists && Array.isArray(s.data().emails) && s.data().emails.map(x => String(x).toLowerCase()).includes(eu.email)))
+    .catch(() => false);
+  if (!isAdmin){
+    for (const v of VIEWS) $('#v-' + v).hidden = true;
+    const v = $('#v-responder'); v.hidden = false;
+    v.replaceChildren(el('div', {class:'empty'}, el('h2', {text:'Acesso restrito'}),
+      el('p', {text:'Esta área é só para administradores (' + eu.email + ' não está na lista). Se você recebeu um convite, abra o link pessoal que veio no e-mail: ele não precisa de login.'})));
+    return;
+  }
+  $('#nav').hidden = false;
+  $('#tab-questionarios').hidden = false;
+  $('#tab-respostas').hidden = false;
   route();
 
-  const esperando = {q:true, eu:true, todas:isAdmin, conv:isAdmin};
+  const esperando = {q:true, todas:true, conv:true};
   const timer = setTimeout(() => { const c = $('#carregando'); if (c) c.textContent = 'Os dados ainda não responderam. Se demorar, recarregue a página.'; }, 10000);
   const talvezPronto = () => {
-    if (pronto || esperando.q || esperando.eu || esperando.todas || esperando.conv) return;
+    if (pronto || esperando.q || esperando.todas || esperando.conv) return;
     clearTimeout(timer); pronto = true; route();
   };
-  const naoEditando = () => viewAtual !== 'editor' && !(viewAtual === 'responder' && respSel);
 
   db.collection('questionarios').onSnapshot(snap => {
     const novo = {};
@@ -1178,35 +1247,23 @@ onAuthStateChanged(auth, async u => {
     questionarios = novo;
     esperando.q = false;
     if (!pronto) return talvezPronto();
-    if (naoEditando()) render();
+    if (viewAtual !== 'editor') render();
   }, () => { esperando.q = false; talvezPronto(); });
 
-  db.collection('respostas').where('uid', uid).onSnapshot(snap => {
-    const porQ = {};
-    for (const d of snap.docs){ const x = d.data(); porQ[x.qid] = {respostas:x.respostas, enviadoEm:x.enviadoEm}; }
-    meuDoc = {porQ};
-    esperando.eu = false;
+  db.collection('respostas').onSnapshot(snap => {
+    // respostas por link pessoal usam o token como identificador do participante
+    todasRespostas = snap.docs.map(d => { const x = d.data(); return {...x, uid:x.token || x.uid}; });
+    for (const r of todasRespostas){ emailsDe[r.uid] = String(r.email || '').toLowerCase(); nomes[r.uid] = r.nome || r.email || ''; }
+    esperando.todas = false;
     if (!pronto) return talvezPronto();
-    if (viewAtual === 'responder' && !respSel) render();
-  }, () => { esperando.eu = false; talvezPronto(); });
-
-  if (isAdmin){
-    db.collection('respostas').onSnapshot(snap => {
-      todasRespostas = snap.docs.map(d => d.data());
-      for (const r of todasRespostas){ nomes[r.uid] = r.nome || ''; emailsDe[r.uid] = String(r.email || '').toLowerCase(); }
-      esperando.todas = false;
-      if (!pronto) return talvezPronto();
-      if (viewAtual === 'respostas' || viewAtual === 'questionarios' || viewAtual === 'convidados') render();
-    }, () => { esperando.todas = false; talvezPronto(); });
-    db.collection('convites').onSnapshot(snap => {
-      const novo = {};
-      for (const d of snap.docs){ const x = d.data(); novo[d.id || x.qid] = x; }
-      convites = novo;
-      esperando.conv = false;
-      if (!pronto) return talvezPronto();
-      if (viewAtual === 'convidados' && !enviando) render();
-    }, () => { esperando.conv = false; talvezPronto(); });
-  }
+    if (viewAtual === 'respostas' || viewAtual === 'questionarios' || viewAtual === 'convidados') render();
+  }, () => { esperando.todas = false; talvezPronto(); });
+  db.collection('convites').onSnapshot(snap => {
+    const novo = {};
+    for (const d of snap.docs){ const x = d.data(); novo[d.id || x.qid] = x; }
+    convites = novo;
+    esperando.conv = false;
+    if (!pronto) return talvezPronto();
+    if (viewAtual === 'convidados' && !enviando) render();
+  }, () => { esperando.conv = false; talvezPronto(); });
 });
-
-route();

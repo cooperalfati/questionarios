@@ -72,15 +72,15 @@ Entre como administrador, vá em **Questionários → Importar JSON** e cole o c
 
 ## Como funciona
 
-| Quem | O que faz |
-|---|---|
-| Administrador (e-mail em `config/admins`) | Cria e edita questionários (blocos, 5 tipos de resposta, sub-perguntas condicionais), cadastra convidados, envia convites pelo Gmail e vê o relatório |
-| Qualquer conta Google | Abre o link, entra com Google e responde |
+| Quem | Como entra | O que faz |
+|---|---|---|
+| Administrador (e-mail em `config/admins`) | Login com Google | Cria e edita questionários (blocos, 5 tipos de resposta, sub-perguntas condicionais), cadastra convidados, envia convites pelo Gmail e vê o relatório |
+| Convidado | **Sem login**, pelo link pessoal do e-mail | Responde e pode voltar ao mesmo link para alterar enquanto o questionário estiver aberto |
 
-- **Link direto:** `https://<endereço>/#q-<id>` abre o questionário. Se a pessoa ainda não entrou, o app pede o login e depois abre o questionário.
-- **Somente convidados:** opção no editor. Quando marcada, o banco só aceita respostas de e-mails que estão na lista de convidados. A regra é aplicada no Firestore, não só na tela.
-- **Uma resposta por pessoa:** cada resposta fica em `respostas/<idQuestionario>_<uid>`. Reenviar substitui a anterior.
-- **Convites:** cada pessoa recebe um e-mail separado, enviado pela conta do administrador. O app marca a data de envio e mostra quem já respondeu.
+- **Link pessoal:** `https://<endereço>/#r-<token>`. Cada convidado tem um token aleatório de 128 bits, guardado em `tokens/<token>` com o questionário e o e-mail. Quem tem o link consegue responder, então o convidado não deve encaminhá-lo.
+- **Revogar um link:** em Convidados, remova o e-mail (o token é apagado) e adicione de novo para gerar um link novo.
+- **Respostas:** ficam em `respostas/<idQuestionario>_<token>`. As regras do Firestore só aceitam a gravação se o token existir, for daquele questionário, o e-mail bater com o do convite e o questionário estiver aberto.
+- **Convites:** cada pessoa recebe um e-mail separado com o próprio link, enviado pela conta Google do administrador. Sem Gmail, o botão "Copiar e-mails e links dos pendentes" gera uma lista `e-mail;link` para enviar por outro meio.
 
 ## Limites a conhecer
 - O Gmail limita o envio diário: cerca de 500 e-mails por dia em contas comuns e 2.000 no Google Workspace.

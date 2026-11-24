@@ -5,21 +5,11 @@ service cloud.firestore {
     function logado() {
       return request.auth != null && request.auth.token.email_verified == true;
     }
-    function meuEmail() {
-      return request.auth.token.email.lower();
-    }
     // Administradores: documento config/admins com o campo emails (lista, em minúsculas)
     function isAdmin() {
       return logado()
         && exists(/databases/$(database)/documents/config/admins)
-        && meuEmail() in get(/databases/$(database)/documents/config/admins).data.emails;
-    }
-    // Pode responder se o questionário está aberto e, quando restrito, o e-mail está na lista de convidados
-    function podeResponder(qid) {
-      let q = get(/databases/$(database)/documents/questionarios/$(qid)).data;
-      return q.ativo == true
-        && (q.get('somenteConvidados', false) == false
-            || meuEmail() in get(/databases/$(database)/documents/convites/$(qid)).data.get('lista', []));
+        && request.auth.token.email.lower() in get(/databases/$(database)/documents/config/admins).data.emails;
     }
 
     match /config/admins {
@@ -27,27 +17,34 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Questionários: o convidado (sem login) lê só o documento do seu questionário
     match /questionarios/{qid} {
-      allow read: if logado();
-      allow write: if isAdmin();
+      allow get: if true;
+      allow list, write: if isAdmin();
     }
 
-    // Lista de e-mails convidados e texto do convite: só administradores
+    // Lista de convidados e texto do convite: só administradores
     match /convites/{qid} {
       allow read, write: if isAdmin();
     }
 
-    // Uma resposta por pessoa e questionário: id = <qid>_<uid>
+    // Link pessoal: tokens/{token} = {qid, email}. O token (128 bits aleatórios) é o segredo do link.
+    match /tokens/{token} {
+      allow get: if true;
+      allow list, write: if isAdmin();
+    }
+
+    // Resposta do convidado: id = <qid>_<token>. Quem tem o link lê e altera a própria resposta.
     match /respostas/{rid} {
-      allow read: if isAdmin()
-        || (logado() && (resource == null || resource.data.uid == request.auth.uid));
-      allow delete: if isAdmin();
-      allow create, update: if logado()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email == meuEmail()
-        && rid == request.resource.data.qid + '_' + request.auth.uid
-        && request.resource.data.keys().hasOnly(['qid', 'uid', 'nome', 'email', 'respostas', 'enviadoEm'])
-        && podeResponder(request.resource.data.qid);
+      allow get: if true;
+      allow list, delete: if isAdmin();
+      allow create, update: if request.resource.data.keys().hasOnly(['qid', 'token', 'email', 'respostas', 'enviadoEm'])
+        && request.resource.data.token is string
+        && rid == request.resource.data.qid + '_' + request.resource.data.token
+        && exists(/databases/$(database)/documents/tokens/$(request.resource.data.token))
+        && get(/databases/$(database)/documents/tokens/$(request.resource.data.token)).data.qid == request.resource.data.qid
+        && get(/databases/$(database)/documents/tokens/$(request.resource.data.token)).data.email == request.resource.data.email
+        && get(/databases/$(database)/documents/questionarios/$(request.resource.data.qid)).data.ativo == true;
     }
   }
 }

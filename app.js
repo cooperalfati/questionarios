@@ -339,7 +339,7 @@ function renderEditor(){
     el('div', {class:'panel ed-head'},
       el('label', {class:'f'}, 'Título do questionário', titulo),
       el('label', {class:'f'}, 'Descrição', desc),
-      el('label', {class:'chk'}, ativo, 'Aberto para respostas')),
+      el('label', {class:'chk'}, ativo, 'Ativo')),
     tools,
     tree,
     el('div', {style:'margin-top:12px'},
@@ -708,7 +708,7 @@ function renderResponder(){
     el('p', {class:'muted small', style:'margin:2px 0 0', text:'Escolha um questionário. Você pode voltar e alterar suas respostas enquanto ele estiver aberto.'}))));
   if (!abertos.length){
     v.append(el('div', {class:'empty'}, el('h2', {text:'Nenhum questionário aberto'}),
-      el('p', {text:isAdmin ? 'Crie um questionário na aba Questionários e marque “Aberto para respostas”.' : 'Quando houver um questionário aberto, ele aparece aqui.'})));
+      el('p', {text:isAdmin ? 'Crie um questionário na aba Questionários e marque “Ativo”.' : 'Quando houver um questionário aberto, ele aparece aqui.'})));
     return;
   }
   const grid = el('div', {class:'cards'});
@@ -893,7 +893,7 @@ async function renderConvidados(){
     el('div', {style:'display:flex;gap:10px;align-items:center;flex-wrap:wrap'},
       el('button', {class:'link', type:'button', onclick:() => ir('questionarios')}, '← Questionários'),
       el('h2', {text:'Convidados de'}), sel)));
-  if (!q.ativo) v.append(el('p', {class:'notice', text:'Este questionário está fechado. Abra-o no editor (“Aberto para respostas”) antes de enviar os convites.'}));
+  if (!q.ativo) v.append(el('p', {class:'notice', text:'Este questionário está fechado. Marque “Ativo” no editor antes de enviar os convites.'}));
 
   // adicionar e-mails
   const ta = el('textarea', {rows:'4', placeholder:'Cole os e-mails aqui, separados por vírgula, ponto e vírgula ou um por linha', 'aria-label':'E-mails para adicionar'});
@@ -1252,7 +1252,7 @@ function contextoIA(){
     const flat = achatar(todasDe(q));
     const rs = respostasDe(q.id);
     out.push(`\n## Questionário "${q.titulo || 'Sem título'}" (id ${q.id})`);
-    out.push(`Situação: ${q.ativo ? 'Aberto para respostas' : 'Fechado'}. Criado: ${q.criadoEm ? fmtDH(q.criadoEm) : '?'}. Alterado: ${q.atualizadoEm ? fmtDH(q.atualizadoEm) : '?'}.`);
+    out.push(`Situação: ${q.ativo ? 'Ativo (aberto para respostas)' : 'Inativo (fechado para respostas)'}. Criado: ${q.criadoEm ? fmtDH(q.criadoEm) : '?'}. Alterado: ${q.atualizadoEm ? fmtDH(q.atualizadoEm) : '?'}.`);
     if (q.descricao) out.push(`Descrição: ${q.descricao}`);
     out.push(`Perguntas principais: ${todasDe(q).length}; total com sub-perguntas: ${flat.length}; respostas recebidas: ${rs.length}.`);
     out.push('### Estrutura');
@@ -1318,7 +1318,7 @@ else onAuthStateChanged(auth, async u => {
   $('#tab-questionarios').hidden = false;
   $('#tab-respostas').hidden = false;
   route();
-  import('./assistente.js?v=20261126b')
+  import('./assistente.js?v=20261126c')
     .then(m => m.montarAssistente({app:fbApp, contexto:contextoIA, quem:eu.nome}))
     .catch(e => console.error('[assistente]', e));
 

@@ -21,7 +21,7 @@ App web para criar questionários, convidar pessoas por e-mail e acompanhar as r
 ## Aba Questionários
 - Lista os questionários com título, situação (Aberto/Fechado), número de perguntas e de respostas e a data da última alteração.
 - Botões de cada cartão: "Editar", "Convidados", "Respostas", "Duplicar" (cria uma cópia fechada para respostas) e "Excluir" (pede confirmação; apaga o questionário).
-- "Novo questionário" abre o editor vazio. "Importar JSON" permite colar o conteúdo de um arquivo .json de questionário (com "blocos" ou "perguntas"); o importado começa fechado para respostas.
+- "Novo questionário" abre o editor vazio.
 
 ## Editor de questionário
 - Campos: título (obrigatório), descrição/orientação para quem vai responder e a opção "Ativo" (marcada = aberto para respostas). Questionário inativo (fechado) não aceita novas respostas pelo link.

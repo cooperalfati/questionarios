@@ -24,7 +24,7 @@ App web para criar questionários, convidar pessoas por e-mail e acompanhar as r
 - "Novo questionário" abre o editor vazio. "Importar JSON" permite colar o conteúdo de um arquivo .json de questionário (com "blocos" ou "perguntas"); o importado começa fechado para respostas.
 
 ## Editor de questionário
-- Campos: título (obrigatório), descrição/orientação para quem vai responder e a opção "Aberto para respostas". Questionário fechado não aceita novas respostas pelo link.
+- Campos: título (obrigatório), descrição/orientação para quem vai responder e a opção "Ativo" (marcada = aberto para respostas). Questionário inativo (fechado) não aceita novas respostas pelo link.
 - Blocos: separam assuntos dentro do mesmo questionário. Cada bloco tem título (obrigatório) e descrição opcional, pode ser movido para cima/baixo ou excluído (excluir remove as perguntas dele). Não é permitido bloco sem perguntas.
 - Perguntas: texto (obrigatório), tipo de resposta, "Obrigatória" (sim/não), texto de ajuda opcional. Podem ser movidas para cima/baixo, trocadas de bloco e excluídas.
 - Tipos de resposta: Opções simples (uma escolha, mínimo 2 opções), Opções múltiplas (várias escolhas), Texto, Número e Data.

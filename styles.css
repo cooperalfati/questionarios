@@ -282,3 +282,5 @@ body:has(#v-login:not([hidden])) main{min-height:calc(100vh - 90px)}
 @media (max-width:640px){ .ia-painel{right:12px;bottom:12px} .ia-fab{right:12px;bottom:12px} }
 @media print{ .ia-fab,.ia-painel{display:none} }
 .ia-top .btn{white-space:nowrap}
+.grecaptcha-badge{visibility:hidden}
+.ia-aviso a{color:inherit}

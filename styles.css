@@ -103,7 +103,7 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:.875rem;font-weight
 .opts{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .opt{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:center}
 .opt .dot{width:14px;height:14px;border:2px solid var(--muted);border-radius:50%}
-.opt .dot.sq{border-radius:3px}
+.opt .dot.quad{border-radius:3px}
 .cond{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px;padding:8px 10px;border-radius:8px;background:var(--info-bg);color:var(--info);font-size:.875rem;font-weight:500}
 .cond select,.cond input{width:auto;min-width:9rem;background:var(--surface);padding:5px 8px}
 .cond.bad{background:var(--crit-bg);color:var(--crit)}

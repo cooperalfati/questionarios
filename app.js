@@ -285,6 +285,9 @@ async function duplicar(q){
 
 /* ================= editor ================= */
 let previewVals = {}, previewTimer = null;
+// perguntas recolhidas no editor (mostram só os dados principais)
+const recolhidas = new Set();
+const todasPerguntasEdit = () => achatar(edit.blocos.flatMap(b => b.perguntas));
 function abrirEditor(id){
   if (edit && editDirty && edit.id === id){ ir('editor'); return; }
   if (id && questionarios[id]){
@@ -296,6 +299,9 @@ function abrirEditor(id){
   }
   editDirty = !id;
   previewVals = {};
+  recolhidas.clear();
+  // ao abrir um questionário existente, as perguntas começam recolhidas
+  if (id) for (const x of todasPerguntasEdit()) recolhidas.add(x.q.id);
   ir('editor');
 }
 function sujo(){
@@ -321,6 +327,10 @@ function renderEditor(){
   soConv.checked = !!edit.somenteConvidados;
   soConv.addEventListener('change', () => { edit.somenteConvidados = soConv.checked; sujo(); });
 
+  const tools = el('div', {class:'b-tools'},
+    el('span', {class:'muted small', text:'Detalhes das perguntas:'}),
+    el('button', {class:'btn sm', type:'button', onclick:() => { for (const x of todasPerguntasEdit()) recolhidas.add(x.q.id); renderArvore(); }}, 'Recolher todas'),
+    el('button', {class:'btn sm', type:'button', onclick:() => { recolhidas.clear(); renderArvore(); }}, 'Expandir todas'));
   const tree = el('div', {class:'b-tree', id:'b-tree'});
   const builder = el('div', null,
     el('div', {class:'bar-top'},
@@ -330,6 +340,7 @@ function renderEditor(){
       el('label', {class:'f'}, 'Título do questionário', titulo),
       el('label', {class:'f'}, 'Descrição', desc),
       el('label', {class:'chk'}, ativo, 'Aberto para respostas')),
+    tools,
     tree,
     el('div', {style:'margin-top:12px'},
       el('button', {class:'btn', type:'button', onclick:() => { edit.blocos.push(novoBloco()); sujo(); renderArvore(); }}, '+ Novo bloco'),
@@ -410,7 +421,9 @@ function bCard(q, num, pai, irmas, idx, bi){
   // condição (só sub-perguntas)
   if (pai){
     if (!q.cond || !OPS[pai.tipo].some(o => o[0] === q.cond.op)) q.cond = condPadrao(pai);
-    card.append(condEditor(q, pai, num.split('.').slice(0, -1).join('.')));
+    card.append(recolhidas.has(q.id)
+      ? el('p', {class:'sq-cond', style:'margin:0 0 8px', text:descreveCond(pai, q.cond)})
+      : condEditor(q, pai, num.split('.').slice(0, -1).join('.')));
   }
 
   const txt = el('textarea', {rows:'1', maxlength:'300', placeholder:pai ? 'Texto da sub-pergunta' : 'Texto da pergunta', 'aria-label':`Texto da pergunta ${num}`});
@@ -422,7 +435,24 @@ function bCard(q, num, pai, irmas, idx, bi){
   const del = el('button', {class:'icon del', type:'button', title:'Excluir pergunta', 'aria-label':`Excluir pergunta ${num}`}, 'Excluir');
   armar(del, 'Confirmar', () => { irmas.splice(idx, 1); sujo(); renderArvore(); });
   btns.append(del);
-  card.append(el('div', {class:'bq-top'}, el('span', {class:'num', text:num}), txt, btns));
+  const fechado = recolhidas.has(q.id);
+  const tog = el('button', {class:'icon tog', type:'button', 'aria-expanded':String(!fechado),
+    title:fechado ? 'Mostrar detalhes' : 'Ocultar detalhes', 'aria-label':(fechado ? 'Mostrar' : 'Ocultar') + ` detalhes da pergunta ${num}`,
+    onclick:() => { if (fechado) recolhidas.delete(q.id); else recolhidas.add(q.id); renderArvore(); }}, fechado ? '▸' : '▾');
+  card.append(el('div', {class:'bq-top'}, tog, el('span', {class:'num', text:num}), txt, btns));
+  if (fechado){
+    // versão compacta: número, texto e um resumo do restante
+    card.classList.add('fechado');
+    const chip = t => el('span', {class:'chip-res', text:t});
+    const nSub = contar(q.filhas);
+    const ops = TEM_OPCOES(q.tipo) ? q.opcoes.map(o => o.rotulo.trim() || '(sem texto)') : [];
+    card.append(el('div', {class:'bq-resumo'},
+      chip(TIPOS[q.tipo]),
+      q.obrigatoria ? chip('Obrigatória') : null,
+      ops.length ? chip(ops.length <= 4 ? ops.join(' · ') : `${ops.length} opções`) : null,
+      nSub ? chip(nSub === 1 ? '1 sub-pergunta' : `${nSub} sub-perguntas`) : null));
+    return card;
+  }
 
   // tipo e obrigatoriedade
   const tipo = el('select', {'aria-label':`Tipo de resposta da pergunta ${num}`},
@@ -528,7 +558,11 @@ function validarEdicao(){
     if (varios && !b.titulo.trim()) errs.push(`Bloco ${i + 1}: falta o título.`);
     if (!b.perguntas.length) errs.push(`${nome}: o bloco está sem perguntas.`);
   });
-  for (const {q, num, pai} of achatar(edit.blocos.flatMap(b => b.perguntas))){
+  const lista = achatar(edit.blocos.flatMap(b => b.perguntas));
+  const paiDe = new Map(lista.map(x => [x.q.id, x.pai]));
+  const abrir = q => { for (let x = q; x; x = paiDe.get(x.id)) recolhidas.delete(x.id); };
+  for (const {q, num, pai} of lista){
+    const antes = errs.length;
     if (!q.texto.trim()) errs.push(`Pergunta ${num}: falta o texto.`);
     if (TEM_OPCOES(q.tipo)){
       const vals = q.opcoes.map(o => o.rotulo.trim());
@@ -537,6 +571,7 @@ function validarEdicao(){
     }
     if (pai && precisaValor(q.cond.op) && (q.cond.valor === '' || q.cond.valor == null))
       errs.push(`Pergunta ${num}: escolha o valor que abre esta sub-pergunta.`);
+    if (errs.length > antes) abrir(q);
   }
   return errs;
 }
@@ -556,6 +591,7 @@ async function salvar(){
   if (errs.length){
     errBox.append(el('ul', {class:'errs', style:'margin-top:12px'}, errs.map(e => el('li', {text:e}))));
     st.textContent = 'Corrija os itens acima para salvar.'; st.className = 'msg err';
+    renderArvore();   // perguntas com erro são expandidas
     return;
   }
   if (!db){ st.textContent = 'Entre com a sua conta para salvar.'; st.className = 'msg err'; return; }

@@ -1,8 +1,8 @@
 # Perguntas e Respostas · Cooperativa Alfa
 
-**No ar (projeto de testes):** https://ronyperuzzo.github.io/questionarios/
+**No ar (projeto de testes):** https://cooperalfati.github.io/questionarios/
 
-- Site: GitHub Pages (este repositório, branch `main`, pasta raiz).
+- Site: GitHub Pages (repositório `cooperalfati/questionarios`, branch `main`, pasta raiz).
 - Login e banco: Firebase, projeto `questionarios-cooperalfa` (plano gratuito Spark).
 - Para atualizar o site, edite os arquivos aqui no GitHub. A publicação é automática em cerca de 1 minuto.
 

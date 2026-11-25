@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, reauthenticateWithPopup } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, reauthenticateWithPopup } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -800,6 +800,46 @@ async function copiar(btn, texto, rotulo){
   setTimeout(() => { btn.textContent = rotulo; }, 2500);
 }
 
+/* Login Microsoft: só contas corporativas da Cooperalfa (Microsoft 365) */
+const MS_TENANT = 'a1d0bfea-059c-4501-b735-2566a7d10a95'; // locatário Alfa (cooperalfa.coop.br)
+const MS_SCOPE = 'Mail.Send';
+function provMicrosoft(extra = {}){
+  const p = new OAuthProvider('microsoft.com');
+  p.setCustomParameters({tenant:MS_TENANT, ...extra});
+  return p;
+}
+const provedorAtual = () => { const u = auth.currentUser; return u && u.providerData.some(x => x.providerId === 'microsoft.com') ? 'microsoft' : 'google'; };
+const nomeServico = () => provedorAtual() === 'microsoft' ? 'Outlook' : 'Gmail';
+
+/* Envio pelo Outlook: permissão Mail.Send e API Microsoft Graph, com a conta de quem está logado */
+let msToken = null, msExp = 0;
+async function tokenOutlook(){
+  if (msToken && Date.now() < msExp) return msToken;
+  const prov = provMicrosoft({login_hint:eu.email});
+  prov.addScope(MS_SCOPE);
+  const r = await reauthenticateWithPopup(auth.currentUser, prov);
+  const cred = OAuthProvider.credentialFromResult(r);
+  if (!cred || !cred.accessToken) throw {code:'sem_token'};
+  msToken = cred.accessToken;
+  msExp = Date.now() + 50 * 60 * 1000;
+  return msToken;
+}
+async function enviarOutlook(para, assunto, corpo){
+  const token = await tokenOutlook();
+  const r = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method:'POST',
+    headers:{'Authorization':'Bearer ' + token, 'Content-Type':'application/json'},
+    body:JSON.stringify({message:{subject:assunto, body:{contentType:'Text', content:corpo}, toRecipients:[{emailAddress:{address:para}}]}, saveToSentItems:true})
+  });
+  if (r.ok) return;
+  let det = '';
+  try { const j = await r.json(); det = j && j.error && j.error.message || ''; } catch {}
+  if (r.status === 401){ msToken = null; throw {code:'expirou'}; }
+  throw {code:'gmail_' + r.status, message:det};
+}
+const tokenEnvio = () => provedorAtual() === 'microsoft' ? tokenOutlook() : tokenGmail();
+const enviarEmail = (para, assunto, corpo) => provedorAtual() === 'microsoft' ? enviarOutlook(para, assunto, corpo) : enviarGmail(para, assunto, corpo);
+
 /* Envio pelo Gmail do administrador: pede a permissão gmail.send no login Google
    e chama a API do Gmail direto do navegador, com a conta de quem está logado. */
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
@@ -848,16 +888,16 @@ async function enviarGmail(para, assunto, corpo){
   throw {code:'gmail_' + r.status, message:det};
 }
 function erroGmail(e){
-  const c = e && e.code;
-  if (c === 'auth/popup-blocked') return 'O navegador bloqueou a janela do Google. Permita pop-ups para este site e clique de novo.';
-  if (c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') return 'A janela do Google foi fechada antes de autorizar o envio.';
-  if (c === 'auth/user-mismatch') return 'Autorize com a mesma conta Google com que você entrou no app.';
-  if (c === 'expirou') return 'A autorização do Gmail expirou. Clique de novo para continuar os envios.';
-  if (c === 'sem_token') return 'O Google não devolveu a permissão de envio. Clique de novo e aceite “Enviar e-mail em seu nome”.';
-  if (c === 'gmail_403') return 'O Gmail recusou o envio (' + (e.message || 'sem permissão') + '). Confira se a API do Gmail está ativada no projeto do Google Cloud.';
-  if (c === 'gmail_429') return 'Limite de envios do Gmail atingido. Espere alguns minutos e use “Enviar para quem ainda não recebeu”.';
-  if (String(c || '').startsWith('gmail_')) return 'O Gmail recusou o envio: ' + (e.message || c) + '.';
-  if (e instanceof TypeError) return 'Sem conexão com o Gmail. Verifique a internet e tente de novo.';
+  const c = e && e.code, sv = nomeServico(), conta = sv === 'Outlook' ? 'Microsoft' : 'Google';
+  if (c === 'auth/popup-blocked') return 'O navegador bloqueou a janela de autorização. Permita pop-ups para este site e clique de novo.';
+  if (c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') return 'A janela de autorização foi fechada antes de liberar o envio.';
+  if (c === 'auth/user-mismatch') return 'Autorize com a mesma conta ' + conta + ' com que você entrou no app.';
+  if (c === 'expirou') return 'A autorização do ' + sv + ' expirou. Clique de novo para continuar os envios.';
+  if (c === 'sem_token') return 'A ' + conta + ' não devolveu a permissão de envio. Clique de novo e aceite enviar e-mail em seu nome.';
+  if (c === 'gmail_403') return 'O ' + sv + ' recusou o envio (' + (e.message || 'sem permissão') + ').';
+  if (c === 'gmail_429') return 'Limite de envios do ' + sv + ' atingido. Espere alguns minutos e use “Enviar para quem ainda não recebeu”.';
+  if (String(c || '').startsWith('gmail_')) return 'O ' + sv + ' recusou o envio: ' + (e.message || c) + '.';
+  if (e instanceof TypeError) return 'Sem conexão com o ' + sv + '. Verifique a internet e tente de novo.';
   return 'Não foi possível enviar (' + (c || 'erro') + '). Os demais envios foram interrompidos.';
 }
 
@@ -944,8 +984,8 @@ async function renderConvidados(){
     if (!msg.value.includes('{link}')){ stEnv.textContent = 'A mensagem precisa ter {link} para levar o link do questionário.'; stEnv.className = 'msg err'; return; }
     enviando = true;
     for (const b of v.querySelectorAll('button')) b.disabled = true;
-    // a janela de autorização do Google precisa abrir direto do clique
-    try { await tokenGmail(); }
+    // a janela de autorização precisa abrir direto do clique
+    try { await tokenEnvio(); }
     catch (e){
       enviando = false;
       for (const b of v.querySelectorAll('button')) b.disabled = false;
@@ -962,7 +1002,7 @@ async function renderConvidados(){
       stEnv.textContent = `Enviando ${ok + 1} de ${lista.length}: ${item.email}…`; stEnv.className = 'msg';
       try {
         const tk = (atual.emails.find(x => x.email === item.email) || {}).token;
-        await enviarGmail(item.email, sub, preencher(msg.value, q, tk));
+        await enviarEmail(item.email, sub, preencher(msg.value, q, tk));
         ok++;
         const alvo = atual.emails.find(x => x.email === item.email);
         if (alvo) alvo.enviadoEm = new Date().toISOString();
@@ -992,13 +1032,13 @@ async function renderConvidados(){
 
   v.append(el('div', {class:'panel'},
     el('h3', {text:'E-mail do convite'}),
-    el('p', {class:'muted small', style:'margin:0 0 10px', text:'Use {titulo} para o nome do questionário e {link} para o link. Cada pessoa recebe um e-mail separado, enviado da sua conta Google (' + eu.email + '). No primeiro envio o Google pede sua autorização.'}),
+    el('p', {class:'muted small', style:'margin:0 0 10px', text:'Use {titulo} para o nome do questionário e {link} para o link. Cada pessoa recebe um e-mail separado, enviado da sua conta (' + eu.email + ', pelo ' + nomeServico() + '). No primeiro envio é pedida a sua autorização.'}),
     el('label', {class:'f'}, 'Assunto', assunto),
     el('label', {class:'f', style:'margin-top:10px'}, 'Mensagem', msg),
     el('div', {class:'row-acts'}, bSalvarMsg, bPadrao, stMsg),
     el('div', {class:'row-acts', style:'padding-top:12px;border-top:1px solid var(--line);margin-top:14px'}, bNovos, bLembrar),
     stEnv,
-    el('div', {class:'row-acts'}, el('span', {class:'muted small', text:'Sem Gmail?'}), bCopEm)));
+    el('div', {class:'row-acts'}, el('span', {class:'muted small', text:'Sem ' + nomeServico() + '?'}), bCopEm)));
 
   // tabela
   if (!emails.length){
@@ -1159,9 +1199,9 @@ function mostrarLogin(msg){
   $('#v-login').hidden = false;
   $('#login-msg').textContent = msg || '';
 }
-async function entrar(){
-  const prov = new GoogleAuthProvider();
-  prov.setCustomParameters({prompt:'select_account'});
+async function entrar(tipo){
+  const prov = tipo === 'microsoft' ? provMicrosoft({prompt:'select_account'}) : new GoogleAuthProvider();
+  if (tipo !== 'microsoft') prov.setCustomParameters({prompt:'select_account'});
   $('#login-msg').textContent = '';
   try { await signInWithPopup(auth, prov); }
   catch (e){
@@ -1169,10 +1209,15 @@ async function entrar(){
     if (e && e.code === 'auth/popup-closed-by-user') return;
     $('#login-msg').textContent = e && e.code === 'auth/unauthorized-domain'
       ? 'Este endereço não está autorizado no Firebase (Authentication → Configurações → Domínios autorizados).'
-      : 'Não foi possível entrar agora. Tente novamente.';
+      : e && e.code === 'auth/operation-not-allowed'
+        ? 'O login com ' + (tipo === 'microsoft' ? 'Microsoft' : 'Google') + ' ainda não está ativado no Firebase.'
+        : e && e.code === 'auth/account-exists-with-different-credential'
+          ? 'Este e-mail já entra com outro provedor. Use o mesmo botão de antes.'
+          : 'Não foi possível entrar agora. Tente novamente.';
   }
 }
-$('#btn-entrar').addEventListener('click', entrar);
+$('#btn-entrar').addEventListener('click', () => entrar('google'));
+$('#btn-entrar-ms').addEventListener('click', () => entrar('microsoft'));
 $('#btn-sair').addEventListener('click', async () => {
   if (editDirty && !$('#btn-sair').classList.contains('armed')){
     const b = $('#btn-sair'); b.classList.add('armed'); b.textContent = 'Sair sem salvar?';
@@ -1248,7 +1293,7 @@ else onAuthStateChanged(auth, async u => {
   iniciado = true;
   db = fire;
   uid = u.uid;
-  eu = {uid:u.uid, nome:u.displayName || '', email:String(u.email || '').toLowerCase()};
+  eu = {uid:u.uid, nome:u.displayName || '', email:String(u.email || (u.providerData.find(x => x.email) || {}).email || '').toLowerCase()};
   $('#v-login').hidden = true;
   $('#quem').hidden = false;
   $('#quem-nome').textContent = eu.nome || eu.email;

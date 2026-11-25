@@ -3,7 +3,13 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function logado() {
-      return request.auth != null && request.auth.token.email_verified == true;
+      // Google: e-mail verificado. Microsoft (Firebase não marca como verificado):
+      // só contas do Microsoft 365 da Cooperalfa
+      return request.auth != null && (
+        request.auth.token.email_verified == true
+        || (request.auth.token.firebase.sign_in_provider == 'microsoft.com'
+            && request.auth.token.email.lower().matches('.*@cooperalfa[.]coop[.]br'))
+      );
     }
     // Administradores: documento config/admins com o campo emails (lista, em minúsculas)
     function isAdmin() {

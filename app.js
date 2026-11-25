@@ -526,7 +526,7 @@ function condEditor(q, pai, numPai){
     box.classList.toggle('bad', precisaValor(c.op) && (c.valor === '' || c.valor == null));
   };
   opSel.addEventListener('change', () => { c.op = opSel.value; sync(); sujo(); });
-  box.append(el('span', {text:`Abre quando a resposta da ${numPai}`}), opSel, valCtrl);
+  box.append(el('span', {text:`Abre quando a resposta da pergunta ${numPai}`}), opSel, valCtrl);
   sync();
   return box;
 }
@@ -1299,7 +1299,7 @@ else onAuthStateChanged(auth, async u => {
   $('#tab-questionarios').hidden = false;
   $('#tab-respostas').hidden = false;
   route();
-  import('./assistente.js?v=20261126d')
+  import('./assistente.js?v=20261126e')
     .then(m => m.montarAssistente({app:fbApp, contexto:contextoIA, quem:eu.nome}))
     .catch(e => console.error('[assistente]', e));
 

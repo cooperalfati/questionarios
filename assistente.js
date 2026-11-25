@@ -1,6 +1,9 @@
 /* Assistente de IA para administradores (Gemini via Firebase AI Logic).
    Responde dúvidas sobre o uso do app e sobre os dados dos questionários. */
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/firebase-ai.js';
+const SDK_APPCHECK = 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js';
+// chave de site do reCAPTCHA (Fraud Defense) do projeto: é pública, não é segredo
+const RECAPTCHA_SITE = '6Lf-RzIuAAAAAJePMETZhDktp-H4tNKzGAMWdK95';
 // modelos tentados em ordem (o primeiro disponível é usado)
 const MODELOS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
 const LIMITE_CONTEXTO = 400000;   // caracteres de dados enviados à IA
@@ -126,7 +129,7 @@ export function montarAssistente({app, contexto, quem}){
       <textarea id="ia-txt" rows="2" placeholder="Pergunte, por exemplo: Quem ainda não respondeu o levantamento?" aria-label="Sua pergunta"></textarea>
       <button type="submit" class="btn primary" id="ia-env">Enviar</button>
     </form>
-    <p class="ia-aviso">Respostas geradas por IA (Google Gemini) podem conter erros. Para responder, os dados dos questionários e respostas são enviados ao Google.</p>`;
+    <p class="ia-aviso">Respostas geradas por IA (Google Gemini) podem conter erros. Para responder, os dados dos questionários e respostas são enviados ao Google. Protegido pelo reCAPTCHA: aplicam-se a <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Política de Privacidade</a> e os <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Termos de Serviço</a> do Google.</p>`;
   document.body.append(fab, painel);
 
   const msgs = painel.querySelector('#ia-msgs');
@@ -157,6 +160,11 @@ export function montarAssistente({app, contexto, quem}){
 
   async function modelo(i){
     if (!api){
+      // App Check: comprova que a chamada vem deste site antes de liberar a IA
+      try {
+        const ac = await import(SDK_APPCHECK);
+        ac.initializeAppCheck(app, {provider:new ac.ReCaptchaEnterpriseProvider(RECAPTCHA_SITE), isTokenAutoRefreshEnabled:true});
+      } catch (e){ console.warn('[assistente] App Check', e); }
       const m = await import(SDK);
       api = {getAI:m.getAI, getGenerativeModel:m.getGenerativeModel, GoogleAIBackend:m.GoogleAIBackend};
     }

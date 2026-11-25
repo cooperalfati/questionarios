@@ -1,6 +1,6 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, reauthenticateWithPopup } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, reauthenticateWithPopup } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
 const fbApp = initializeApp(firebaseConfig);
@@ -1243,6 +1243,51 @@ async function abrirConvite(token){
     f);
 }
 
+/* ---------- dados enviados ao assistente de IA ---------- */
+function contextoIA(){
+  const out = [];
+  const qs = lista();
+  out.push(`Administrador logado: ${eu.nome || ''} <${eu.email}>. Total de questionários: ${qs.length}.`);
+  for (const q of qs){
+    const flat = achatar(todasDe(q));
+    const rs = respostasDe(q.id);
+    out.push(`\n## Questionário "${q.titulo || 'Sem título'}" (id ${q.id})`);
+    out.push(`Situação: ${q.ativo ? 'Aberto para respostas' : 'Fechado'}. Criado: ${q.criadoEm ? fmtDH(q.criadoEm) : '?'}. Alterado: ${q.atualizadoEm ? fmtDH(q.atualizadoEm) : '?'}.`);
+    if (q.descricao) out.push(`Descrição: ${q.descricao}`);
+    out.push(`Perguntas principais: ${todasDe(q).length}; total com sub-perguntas: ${flat.length}; respostas recebidas: ${rs.length}.`);
+    out.push('### Estrutura');
+    const blocoDe = new Map();
+    for (const b of blocosDe(q)) for (const p of b.perguntas || []) blocoDe.set(p, b);
+    let blocoAtual = null;
+    for (const x of flat){
+      const p = x.q;
+      const b = x.nivel === 0 ? blocoDe.get(p) : null;
+      if (b && b !== blocoAtual){ blocoAtual = b; if (b.titulo) out.push(`Bloco: ${b.titulo}${b.descricao ? ' — ' + b.descricao : ''}`); }
+      {
+        let l = `${'  '.repeat(x.nivel)}${x.num}. ${p.texto || '(sem texto)'} [${TIPOS[p.tipo] || p.tipo}${p.obrigatoria ? ', obrigatória' : ''}]`;
+        if (TEM_OPCOES(p.tipo)) l += ` Opções: ${(p.opcoes || []).map(o => o.rotulo).join(' | ')}.`;
+        if (x.pai && p.cond) l += ` (sub-pergunta da ${x.num.split('.').slice(0, -1).join('.')}: ${descreveCond(x.pai, p.cond)})`;
+        if (p.ajuda) l += ` Ajuda: ${p.ajuda}`;
+        out.push(l);
+      }
+    }
+    const conv = (convites[q.id] && convites[q.id].emails) || [];
+    const respondeu = {};
+    for (const r of rs) respondeu[String(r.email || '').toLowerCase()] = r.enviadoEm;
+    out.push(`### Convidados (${conv.length})`);
+    for (const c of conv){
+      const r = respondeu[c.email];
+      out.push(`- ${c.email}: convite ${c.enviadoEm ? 'enviado em ' + fmtDH(c.enviadoEm) : 'não enviado'}; ${r ? 'respondeu em ' + fmtDH(r) : 'não respondeu'}`);
+    }
+    out.push(`### Respostas (${rs.length})`);
+    for (const r of rs){
+      const itens = flat.filter(x => !vazio(r.respostas[x.q.id])).map(x => `${x.num}=${textoResposta(x.q, r.respostas[x.q.id])}`);
+      out.push(`- ${r.email || nomeDe(r.uid)} (${r.enviadoEm ? fmtDH(r.enviadoEm) : '?'}): ${itens.join('; ')}`);
+    }
+  }
+  return out.join('\n');
+}
+
 /* ---------- administrador: login Google ---------- */
 let iniciado = false;
 if (modoConvidado) abrirConvite(MATCH_TOKEN[1]);
@@ -1273,6 +1318,9 @@ else onAuthStateChanged(auth, async u => {
   $('#tab-questionarios').hidden = false;
   $('#tab-respostas').hidden = false;
   route();
+  import('./assistente.js?v=20261125f')
+    .then(m => m.montarAssistente({app:fbApp, contexto:contextoIA, quem:eu.nome}))
+    .catch(e => console.error('[assistente]', e));
 
   const esperando = {q:true, todas:true, conv:true};
   const timer = setTimeout(() => { const c = $('#carregando'); if (c) c.textContent = 'Os dados ainda não responderam. Se demorar, recarregue a página.'; }, 10000);

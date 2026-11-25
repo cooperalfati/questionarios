@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, reauthenticateWithPopup } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, reauthenticateWithPopup } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -800,45 +800,9 @@ async function copiar(btn, texto, rotulo){
   setTimeout(() => { btn.textContent = rotulo; }, 2500);
 }
 
-/* Login Microsoft: só contas corporativas da Cooperalfa (Microsoft 365) */
-const MS_TENANT = 'a1d0bfea-059c-4501-b735-2566a7d10a95'; // locatário Alfa (cooperalfa.coop.br)
-const MS_SCOPE = 'Mail.Send';
-function provMicrosoft(extra = {}){
-  const p = new OAuthProvider('microsoft.com');
-  p.setCustomParameters({tenant:MS_TENANT, ...extra});
-  return p;
-}
-const provedorAtual = () => { const u = auth.currentUser; return u && u.providerData.some(x => x.providerId === 'microsoft.com') ? 'microsoft' : 'google'; };
-const nomeServico = () => provedorAtual() === 'microsoft' ? 'Outlook' : 'Gmail';
-
-/* Envio pelo Outlook: permissão Mail.Send e API Microsoft Graph, com a conta de quem está logado */
-let msToken = null, msExp = 0;
-async function tokenOutlook(){
-  if (msToken && Date.now() < msExp) return msToken;
-  const prov = provMicrosoft({login_hint:eu.email});
-  prov.addScope(MS_SCOPE);
-  const r = await reauthenticateWithPopup(auth.currentUser, prov);
-  const cred = OAuthProvider.credentialFromResult(r);
-  if (!cred || !cred.accessToken) throw {code:'sem_token'};
-  msToken = cred.accessToken;
-  msExp = Date.now() + 50 * 60 * 1000;
-  return msToken;
-}
-async function enviarOutlook(para, assunto, corpo){
-  const token = await tokenOutlook();
-  const r = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
-    method:'POST',
-    headers:{'Authorization':'Bearer ' + token, 'Content-Type':'application/json'},
-    body:JSON.stringify({message:{subject:assunto, body:{contentType:'Text', content:corpo}, toRecipients:[{emailAddress:{address:para}}]}, saveToSentItems:true})
-  });
-  if (r.ok) return;
-  let det = '';
-  try { const j = await r.json(); det = j && j.error && j.error.message || ''; } catch {}
-  if (r.status === 401){ msToken = null; throw {code:'expirou'}; }
-  throw {code:'gmail_' + r.status, message:det};
-}
-const tokenEnvio = () => provedorAtual() === 'microsoft' ? tokenOutlook() : tokenGmail();
-const enviarEmail = (para, assunto, corpo) => provedorAtual() === 'microsoft' ? enviarOutlook(para, assunto, corpo) : enviarGmail(para, assunto, corpo);
+const nomeServico = () => 'Gmail';
+const tokenEnvio = () => tokenGmail();
+const enviarEmail = (para, assunto, corpo) => enviarGmail(para, assunto, corpo);
 
 /* Envio pelo Gmail do administrador: pede a permissão gmail.send no login Google
    e chama a API do Gmail direto do navegador, com a conta de quem está logado. */
@@ -888,7 +852,7 @@ async function enviarGmail(para, assunto, corpo){
   throw {code:'gmail_' + r.status, message:det};
 }
 function erroGmail(e){
-  const c = e && e.code, sv = nomeServico(), conta = sv === 'Outlook' ? 'Microsoft' : 'Google';
+  const c = e && e.code, sv = nomeServico(), conta = 'Google';
   if (c === 'auth/popup-blocked') return 'O navegador bloqueou a janela de autorização. Permita pop-ups para este site e clique de novo.';
   if (c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') return 'A janela de autorização foi fechada antes de liberar o envio.';
   if (c === 'auth/user-mismatch') return 'Autorize com a mesma conta ' + conta + ' com que você entrou no app.';
@@ -1199,9 +1163,9 @@ function mostrarLogin(msg){
   $('#v-login').hidden = false;
   $('#login-msg').textContent = msg || '';
 }
-async function entrar(tipo){
-  const prov = tipo === 'microsoft' ? provMicrosoft({prompt:'select_account'}) : new GoogleAuthProvider();
-  if (tipo !== 'microsoft') prov.setCustomParameters({prompt:'select_account'});
+async function entrar(){
+  const prov = new GoogleAuthProvider();
+  prov.setCustomParameters({prompt:'select_account'});
   $('#login-msg').textContent = '';
   try { await signInWithPopup(auth, prov); }
   catch (e){
@@ -1209,15 +1173,10 @@ async function entrar(tipo){
     if (e && e.code === 'auth/popup-closed-by-user') return;
     $('#login-msg').textContent = e && e.code === 'auth/unauthorized-domain'
       ? 'Este endereço não está autorizado no Firebase (Authentication → Configurações → Domínios autorizados).'
-      : e && e.code === 'auth/operation-not-allowed'
-        ? 'O login com ' + (tipo === 'microsoft' ? 'Microsoft' : 'Google') + ' ainda não está ativado no Firebase.'
-        : e && e.code === 'auth/account-exists-with-different-credential'
-          ? 'Este e-mail já entra com outro provedor. Use o mesmo botão de antes.'
-          : 'Não foi possível entrar agora. Tente novamente.';
+      : 'Não foi possível entrar agora. Tente novamente.';
   }
 }
-$('#btn-entrar').addEventListener('click', () => entrar('google'));
-$('#btn-entrar-ms').addEventListener('click', () => entrar('microsoft'));
+$('#btn-entrar').addEventListener('click', entrar);
 $('#btn-sair').addEventListener('click', async () => {
   if (editDirty && !$('#btn-sair').classList.contains('armed')){
     const b = $('#btn-sair'); b.classList.add('armed'); b.textContent = 'Sair sem salvar?';

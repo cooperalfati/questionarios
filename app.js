@@ -221,26 +221,7 @@ function renderLista(){
     el('div', null, el('h2', {text:'Questionários'}),
       el('p', {class:'muted small', style:'margin:2px 0 0', text:'Cadastre perguntas, escolha o tipo de resposta e defina sub-perguntas que abrem conforme a resposta.'})),
     el('div', {style:'display:flex;gap:8px;flex-wrap:wrap'},
-      el('button', {class:'btn', type:'button', onclick:() => { const b = $('#imp-box'); b.hidden = !b.hidden; }}, 'Importar JSON'),
       el('button', {class:'btn primary', type:'button', onclick:() => abrirEditor(null)}, '+ Novo questionário'))));
-  const impTa = el('textarea', {rows:'6', placeholder:'Cole aqui o conteúdo de um arquivo .json de questionário', 'aria-label':'JSON do questionário'});
-  const impSt = el('p', {class:'msg', role:'status', 'aria-live':'polite'});
-  const impBtn = el('button', {class:'btn primary', type:'button'}, 'Importar como novo questionário');
-  impBtn.addEventListener('click', async () => {
-    let d;
-    try { d = JSON.parse(impTa.value); } catch { impSt.textContent = 'O texto não é um JSON válido.'; impSt.className = 'msg err'; return; }
-    if (!d || typeof d !== 'object' || !(Array.isArray(d.blocos) || Array.isArray(d.perguntas))){ impSt.textContent = 'O JSON precisa ter "blocos" ou "perguntas".'; impSt.className = 'msg err'; return; }
-    const id = gid('q'), agora = new Date().toISOString();
-    impBtn.disabled = true;
-    try {
-      await db.doc('questionarios/' + id).set({id, titulo:String(d.titulo || 'Questionário importado'), descricao:String(d.descricao || ''),
-        ativo:false, somenteConvidados:!!d.somenteConvidados, blocos:clone(blocosDe(d)), criadoEm:agora, atualizadoEm:agora});
-      impTa.value = ''; impSt.textContent = 'Importado. Ele começa fechado para respostas.'; impSt.className = 'msg ok';
-    } catch { impSt.textContent = 'Não foi possível importar agora.'; impSt.className = 'msg err'; }
-    finally { impBtn.disabled = false; }
-  });
-  v.append(el('div', {class:'panel', id:'imp-box', hidden:true, style:'margin-bottom:16px'},
-    el('h3', {text:'Importar questionário'}), impTa, el('div', {class:'row-acts'}, impBtn), impSt));
   if (edit && editDirty){
     v.append(el('p', {class:'notice'}, `Há alterações não salvas em “${edit.titulo || 'Sem título'}”. `,
       el('button', {class:'link', type:'button', onclick:() => ir('editor')}, 'Voltar ao editor')));
@@ -1318,7 +1299,7 @@ else onAuthStateChanged(auth, async u => {
   $('#tab-questionarios').hidden = false;
   $('#tab-respostas').hidden = false;
   route();
-  import('./assistente.js?v=20261126c')
+  import('./assistente.js?v=20261126d')
     .then(m => m.montarAssistente({app:fbApp, contexto:contextoIA, quem:eu.nome}))
     .catch(e => console.error('[assistente]', e));
 

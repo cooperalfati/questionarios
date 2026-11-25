@@ -1318,7 +1318,7 @@ else onAuthStateChanged(auth, async u => {
   $('#tab-questionarios').hidden = false;
   $('#tab-respostas').hidden = false;
   route();
-  import('./assistente.js?v=20261126a')
+  import('./assistente.js?v=20261126b')
     .then(m => m.montarAssistente({app:fbApp, contexto:contextoIA, quem:eu.nome}))
     .catch(e => console.error('[assistente]', e));
 

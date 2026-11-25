@@ -487,7 +487,7 @@ function bCard(q, num, pai, irmas, idx, bi){
           for (const f of q.filhas) if (f.cond && f.cond.valor === o.id) f.cond.valor = '';
           sujo(); renderArvore();
         }}, '×');
-      box.append(el('div', {class:'opt'}, el('span', {class:'dot' + (q.tipo === 'multipla' ? ' sq' : '')}), inp, rm));
+      box.append(el('div', {class:'opt'}, el('span', {class:'dot' + (q.tipo === 'multipla' ? ' quad' : '')}), inp, rm));
     });
     box.append(el('div', null, el('button', {class:'btn sm', type:'button', onclick:() => {
       q.opcoes.push({id:gid('o'), rotulo:''}); sujo(); renderArvore();
@@ -1299,7 +1299,7 @@ else onAuthStateChanged(auth, async u => {
   $('#tab-questionarios').hidden = false;
   $('#tab-respostas').hidden = false;
   route();
-  import('./assistente.js?v=20261126e')
+  import('./assistente.js?v=20261126f')
     .then(m => m.montarAssistente({app:fbApp, contexto:contextoIA, quem:eu.nome}))
     .catch(e => console.error('[assistente]', e));
 

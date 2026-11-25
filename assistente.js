@@ -19,7 +19,7 @@ App web para criar questionários, convidar pessoas por e-mail e acompanhar as r
 - Abas do administrador: "Questionários" (lista e editor) e "Respostas". A tela "Convidados" abre pelo botão "Convidados" no cartão de cada questionário.
 
 ## Aba Questionários
-- Lista os questionários com título, situação (Aberto/Fechado), número de perguntas e de respostas e a data da última alteração.
+- Lista os questionários com título, situação (Ativo/Inativo), número de perguntas e de respostas e a data da última alteração.
 - Botões de cada cartão: "Editar", "Convidados", "Respostas", "Duplicar" (cria uma cópia fechada para respostas) e "Excluir" (pede confirmação; apaga o questionário).
 - "Novo questionário" abre o editor vazio.
 

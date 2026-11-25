@@ -4,7 +4,8 @@ const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/firebase-ai.js';
 const SDK_APPCHECK = 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js';
 // chave de site do reCAPTCHA (Fraud Defense) do projeto: é pública, não é segredo
 const RECAPTCHA_SITE = '6Lf-RzIuAAAAAJePMETZhDktp-H4tNKzGAMWdK95';
-// modelos tentados em ordem (o primeiro disponível é usado)
+// modelos tentados em ordem (o primeiro disponível é usado).
+// Camada gratuita: o Flash tem cota diária pequena; ao esgotar, o Flash-Lite (cota maior) assume.
 const MODELOS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
 const LIMITE_CONTEXTO = 400000;   // caracteres de dados enviados à IA
 
@@ -100,7 +101,7 @@ function mensagemErro(e){
   const t = String((e && (e.message || e.code)) || e || '');
   if (/app.?check/i.test(t)) return 'A IA recusou a chamada por falta de verificação do App Check. É preciso concluir a configuração do App Check no Firebase.';
   if (/high demand|overloaded|\b50[0-9]\b/i.test(t)) return 'O serviço de IA está sobrecarregado no momento. Tente de novo em instantes.';
-  if (/429|quota|exhausted|rate/i.test(t)) return 'O limite gratuito de uso da IA foi atingido. Tente de novo em alguns minutos.';
+  if (/\b429\b|quota|exhausted|rate.?limit/i.test(t)) return 'O limite gratuito de uso da IA foi atingido. Se for o limite por minuto, tente de novo em instantes; o limite diário renova por volta das 5h (horário de Brasília).';
   if (/api.?not.?enabled|has not been used|disabled|403/i.test(t)) return 'A IA ainda não está ativada no projeto do Firebase (Firebase AI Logic).';
   if (/fetch|network|Failed to/i.test(t)) return 'Sem conexão com o serviço de IA. Verifique a internet e tente de novo.';
   return 'Não foi possível obter a resposta agora (' + t.slice(0, 160) + ').';
@@ -205,7 +206,8 @@ export function montarAssistente({app, contexto, quem}){
           // modelo inexistente (404) ou sobrecarregado (5xx): tenta o próximo da lista
           const msg = String(e && e.message);
           if (!resposta && i < MODELOS.length - 1){
-            if (/404|not.?found|not supported/i.test(msg)){ modeloIdx = i + 1; continue; }
+            // inexistente ou cota diária esgotada: passa ao próximo e mantém para as próximas perguntas
+            if (/\b404\b|not.?found|not supported|\b429\b|quota|exhausted/i.test(msg)){ modeloIdx = i + 1; continue; }
             if (/\b50[0-9]\b|high demand|overloaded|unavailable/i.test(msg)) continue;
           }
           throw e;

@@ -1058,7 +1058,7 @@ async function renderRelatorio(){
   const ult = rs[0] && rs[0].enviadoEm;
   v.append(el('div', {class:'tiles'},
     el('div', {class:'tile'}, el('p', {text:'Respostas recebidas'}), el('strong', {text:String(rs.length)})),
-    el('div', {class:'tile'}, el('p', {text:'Perguntas (com sub-perguntas)'}), el('strong', {text:String(contar(todasDe(q)))})),
+    el('div', {class:'tile'}, el('p', {text:'Perguntas principais'}), el('strong', {text:String(todasDe(q).length)})),
     el('div', {class:'tile'}, el('p', {text:'Última resposta'}), el('strong', {style:'font-size:1.05rem', text:ult ? fmtDH(ult) : '—'})),
     el('div', {class:'tile'}, el('p', {text:'Situação'}), el('strong', {style:'font-size:1.05rem', text:q.ativo ? 'Aberto' : 'Fechado'}))));
 
@@ -1128,7 +1128,7 @@ async function renderRelatorio(){
   const flat = achatar(todasDe(q));
   const tb = el('tbody');
   for (const r of rs){
-    const n = Object.keys(r.respostas).length;
+    const n = todasDe(q).filter(p => !vazio(r.respostas[p.id])).length;
     const det = el('tr', {class:'det', hidden:true}, el('td', {colspan:'4'},
       el('dl', {class:'det-list'}, flat.filter(x => !vazio(r.respostas[x.q.id])).flatMap(x => [
         el('dt', {text:x.num}), el('dd', null, el('span', {class:'muted', text:x.q.texto + ' — '}), el('b', {text:textoResposta(x.q, r.respostas[x.q.id])}))]))));

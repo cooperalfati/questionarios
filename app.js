@@ -243,7 +243,7 @@ function renderLista(){
     grid.append(el('article', {class:'card'},
       el('div', {style:'display:flex;justify-content:space-between;gap:10px;align-items:start'},
         el('h3', {text:q.titulo || 'Sem título'}),
-        el('span', {class:'pill ' + (q.ativo ? 'ok' : 'off'), text:q.ativo ? 'Aberto' : 'Fechado'})),
+        el('span', {class:'pill ' + (q.ativo ? 'ok' : 'off'), text:q.ativo ? 'Ativo' : 'Inativo'})),
       q.descricao ? el('p', {class:'muted small', text:q.descricao}) : null,
       el('p', {class:'small muted'}, (nb > 1 ? `${nb} blocos · ` : '') + `${n} ${n === 1 ? 'pergunta' : 'perguntas'} · ${nr} ${nr === 1 ? 'resposta' : 'respostas'}`,
         q.atualizadoEm ? ` · alterado em ${fmtDH(q.atualizadoEm)}` : ''),
@@ -1045,7 +1045,7 @@ async function renderRelatorio(){
     el('div', {class:'tile'}, el('p', {text:'Respostas recebidas'}), el('strong', {text:String(rs.length)})),
     el('div', {class:'tile'}, el('p', {text:'Perguntas principais'}), el('strong', {text:String(todasDe(q).length)})),
     el('div', {class:'tile'}, el('p', {text:'Última resposta'}), el('strong', {style:'font-size:1.05rem', text:ult ? fmtDH(ult) : '—'})),
-    el('div', {class:'tile'}, el('p', {text:'Situação'}), el('strong', {style:'font-size:1.05rem', text:q.ativo ? 'Aberto' : 'Fechado'}))));
+    el('div', {class:'tile'}, el('p', {text:'Situação'}), el('strong', {style:'font-size:1.05rem', text:q.ativo ? 'Ativo' : 'Inativo'}))));
 
   if (!rs.length){
     v.append(el('div', {class:'empty'}, el('h2', {text:'Nenhuma resposta ainda'}),
@@ -1299,7 +1299,7 @@ else onAuthStateChanged(auth, async u => {
   $('#tab-questionarios').hidden = false;
   $('#tab-respostas').hidden = false;
   route();
-  import('./assistente.js?v=20261126f')
+  import('./assistente.js?v=20261126g')
     .then(m => m.montarAssistente({app:fbApp, contexto:contextoIA, quem:eu.nome}))
     .catch(e => console.error('[assistente]', e));
 
